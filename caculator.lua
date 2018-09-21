@@ -1,6 +1,7 @@
-local table_operator_one = {"+", "-", "*", "/", "(", ")", "!"}
-local table_operator = {"+", "-", "*", "/", "(", ")"}
-local table_operator_priority = {["+"]=5, ["-"]=5, ["*"]=6, ["/"]=6, 
+local table_operator_unary = {"!", "sin", "cos", "tan"}
+-- local table_operator_one = {"+", "-", "*", "/", "(", ")", "!"}
+local table_operator = {"+", "-", "*", "/", "(", ")", "!", "sin", "cos", "tan"}
+local table_operator_priority = {["+"]=5, ["-"]=5, ["*"]=6, ["/"]=6, ["!"]=80, ["sin"]=70, ["cos"]=70, ["tan"]=70,
 ["("]=99, [")"]=-1, ["start"]=-1, ["end"]=-1}
 
 local Caculator = {}
@@ -16,6 +17,77 @@ local function clean()
     stack_number = {}
 end
 
+local function isUnaryOperator(str)
+    for _, v in ipairs(table_operator_unary) do
+        if v == str then
+            return true
+        end
+    end
+    return false
+end
+
+local function isNumber(str)
+    local result = type(tonumber(str))
+    return result == "number" or str == "."
+end
+
+local function isOperator(str)
+    for _,v in ipairs(table_operator) do
+        if str == v then
+            return true
+        end
+    end
+    return false
+end
+
+-- 修复不规范的写法
+local fixTable = {["pi"] = "3.14159265358979323846", 
+-- ["%^d%.?%d*"] = "0%1", 
+["Sin"] = "sin", ["Cos"] = "cos", ["Tan"] = "tan"}
+local function preFix(expression)
+    for pattern,replace in pairs(fixTable) do
+        expression = string.gsub(expression, pattern, replace)
+    end
+    return expression
+end
+
+-- 对区分开了运算符和运算数的table中的 - + 符号做预处理
+local function fixPlusMinus(expression_table)
+    for index = 1, #expression_table do
+        local word = expression_table[index]
+
+        -- 一元操作符的 - +，则在前边补上0
+        if word == "-" or word == "+" then
+            local last = expression_table[index - 1]
+            if (last and not isNumber(last)) or index == 1 then
+                table.insert(expression_table, index, 0)
+            end
+        -- sin/! 等一元操作符后如果是数字，补全()括号
+        elseif isUnaryOperator(word) then
+            local nextone = expression_table[index + 1]
+            if nextone and isNumber(nextone) then
+                table.insert(expression_table, index + 1, "(")
+                table.insert(expression_table, index + 3, ")")
+            end
+        end
+    end
+    return expression_table
+end
+
+-- 添加省略的 * 星号
+local fillStarTable = {
+["(%d)sin"] = "%1*sin", ["(%d)cos"] = "%1*cos", ["(%d)tan"] = "%1*tan", 
+["(%))sin"] = "%1*sin", ["(%))cos"] = "%1*cos", ["(%)tan"] = "%1*tan", 
+["(%d%.?)pi"] = "%1*pi", ["(%d%.?)%("] = "%1*(", 
+}
+local function fillStar(expression)
+    for pattern,replace in pairs(fillStarTable) do
+        expression = string.gsub(expression, pattern, replace)
+    end
+    return expression
+end
+
+-- 计算二元运算符
 local function caculate(operator, left, right)
     if operator == "+" then
         return left + right
@@ -25,57 +97,66 @@ local function caculate(operator, left, right)
         return left * right
     elseif operator == "/" then
         if right == 0 then
-            error("divide by zero")
+            print("error:divide by zero")
             return 0
         else
-        return left / right
+            return left / right
         end
     end
 end
 
-local function FindAll(str)
-    local function isNumber(str)
-        local result = type(tonumber(str))
-        return result == "number" or str == "."
-    end
-
-    local function isOneOperator(str)
-        for _,v in ipairs(table_operator_one) do
-            if str == v then
-                return true
-            end
+-- 计算一元运算符
+local function caculateUnary(operator, number)
+    local function factorial(number)
+        if number == 0 then
+            return 1
+        else
+            return number * factorial(number - 1)
         end
-        return false
     end
 
+    if operator == "!" then
+        return factorial(number)
+    elseif operator == "sin" then
+        return math.sin(number)
+    elseif operator == "cos" then
+        return math.cos(number)
+    elseif operator == "tan" then
+        return math.tan(number)
+    end
+end
+
+-- 将字符串分为运算数和运算符
+local function FindAll(str)
     local function splitOperator(str)
-        -- str = str .. "$"
         local table_operators = {}
         local operator = ""
-        local index = 1
-        while true do
-            local character = str:sub(index, index)
-            if index > #str then
-                if #operator > 0 then
-                    table.insert(table_operators, operator)
-                end
-            break
-            elseif isOneOperator(character) then
-                if #operator > 0 then
-                    table.insert(table_operators, operator)
-                end
-                table.insert(table_operators, character)
-            -- elseif character == "$" then
-            --     if #operator then
-            --         table.insert(table_operators, operator)
-            --     end
-            --     break
-            else
-                operator = operator .. character
+        for index = 1, #str do
+            operator = operator .. str:sub(index, index)
+            if isOperator(operator) then
+                table.insert(table_operators, operator)
+                operator = ""
             end
-
-            index = index + 1
         end
+        -- local index = 1
+        -- while true do
+        --     local character = str:sub(index, index)
+        --     if index > #str then
+        --         if #operator > 0 then
+        --             table.insert(table_operators, operator)
+        --         end
+        --         break
+        --     elseif isOneOperator(character) then
+        --         if #operator > 0 then
+        --             table.insert(table_operators, operator)
+        --             operator = ""
+        --         end
+        --         table.insert(table_operators, character)
+        --     else
+        --         operator = operator .. character
+        --     end
+        --     index = index + 1
+        -- end
         return table_operators
     end
 
@@ -93,23 +174,8 @@ local function FindAll(str)
                 for _, v in ipairs(splitOperator(operator)) do
                     table.insert(expression_table, v)
                 end
-                -- table.insert(expression_table, operator)
                 operator = ""
             end
-            -- print("111expression splited:")
-            -- print(table.unpack(expression_table))
-        -- -- 左括号
-        -- elseif character == "(" then
-        --     if #operator > 0 then
-        --         table.insert(expression_table, operator)
-        --         operator = ""
-        --     elseif #number > 0 then
-        --         print(" '(' 左边不应该有数字")
-        --         return false
-        --         -- table.insert(expression_table, tonumber(number))
-        --         -- number = ""
-        --     end
-        --     table.insert(expression_table, character)
         -- 结束符号
         elseif character == "$" then
             if #operator > 0 then
@@ -120,37 +186,18 @@ local function FindAll(str)
             elseif #number > 0 then
                 table.insert(expression_table, tonumber(number))
                 number = ""
-
             else
                 -- print("unknown error")
             end
-            -- print("333expression splited:")
-            -- print(table.unpack(expression_table))
+
             break
         -- 操作符
         else           
-            -- operator = operator .. character
-            -- -- 一元操作符
-            -- if isOneOperator(character) then
-            --     -- print("aaa22222222")
-            --     if #number > 0 then
-            --         print("一元操作符 " .. character .. "左边不应该有数字")
-            --         return false
-            --     elseif #operator > 0 then
-            --         table.insert(expression_table, operator)
-            --         operator = ""
-            --         table.insert(expression_table, character)
-            --     end
-            -- else
             operator = operator .. character
-                if #number > 0 then
-                    table.insert(expression_table, tonumber(number))
-                    number = ""
-                end
-            -- end
-
-            -- print("222expression splited:")
-            -- print(table.unpack(expression_table))
+            if #number > 0 then
+                table.insert(expression_table, tonumber(number))
+                number = ""
+            end
         end
         index = index + 1
     end
@@ -158,41 +205,7 @@ local function FindAll(str)
     return expression_table
 end
 
-local function FindDigit(str, expression_table_temp)
-    local index = 1
-    while true do
-        local b,e = str:find("%d+%.?%d*", index)
-        if b then
-            expression_table_temp[b] = tonumber(str:sub(b,e))
-            -- print(expression_table_temp[b])
-            index = e + 1
-        else
-            break
-        end
-    end
-    return expression_table_temp
-end
-
-local function FindOperator(str, expression_table_temp)
-    for _, v in pairs(table_operator) do
-        -- print("search operator " .. tostring(v))
-        while true do
-            local b, e = str:find(v,1,true)
-            -- print(b,e)
-            if b then
-                expression_table_temp[b] = v
-                -- print(expression_table_temp[b])
-                str = str:sub(1,b-1) .. string.rep(" ", e-b+1) .. str:sub(e+1)
-                -- print(str)
-            else
-                break
-            end
-        end
-
-    end
-    return expression_table_temp
-end
-
+-- 根据当前运算符与栈顶运算符的优先级决定是否
 local function comparePriority(stack_top, index)
     local operator_current = expression_table_target[index]
     local stack_top_priority = table_operator_priority[stack_top]
@@ -212,11 +225,16 @@ local function comparePriority(stack_top, index)
     
     -- 栈顶运算符优先级更高，则可以立即进行计算
     if stack_top_priority > current_priority then
-        -- 是否是二元运算符
-        local right = table.remove(stack_number)
-        local left = table.remove(stack_number)
-        table.insert(stack_number, caculate(table.remove(stack_operator), left, right))
+        -- 是否是一元运算符
+        if isUnaryOperator(stack_top) then
+            table.insert(stack_number, caculateUnary(table.remove(stack_operator), table.remove(stack_number)))
+        else
+            local right = table.remove(stack_number)
+            local left = table.remove(stack_number)
+            table.insert(stack_number, caculate(table.remove(stack_operator), left, right))
+        end
         -- index 不变，仍然要处理当前这个运算符
+        --
     -- 当前运算符优先级更高，先存入栈中
     elseif stack_top_priority < current_priority then
         table.insert(stack_operator, operator_current)
@@ -232,10 +250,14 @@ local function comparePriority(stack_top, index)
             index = index + 1
         -- 一般情况，那么可以立即计算
         else
-            -- TODO: 是否是二元运算符
-            local right = table.remove(stack_number)
-            local left = table.remove(stack_number)
-            table.insert(stack_number, caculate(table.remove(stack_operator), left, right))
+            -- 是否是一元运算符
+            if isUnaryOperator(stack_top) then
+                table.insert(stack_number, caculateUnary(table.remove(stack_operator), table.remove(stack_number)))
+            else
+                local right = table.remove(stack_number)
+                local left = table.remove(stack_number)
+                table.insert(stack_number, caculate(table.remove(stack_operator), left, right))
+            end
             -- index 不变，仍然要处理当前这个运算符
         end
     end
@@ -243,10 +265,18 @@ local function comparePriority(stack_top, index)
     return index
 end
 
+-- 处理输入的表达式并返回结果
 local function Caculate(expression_str)
-    stack_operator = {"start"}
 
+    -- 预处理
+    expression_str = fillStar(expression_str)
+    expression_str = preFix(expression_str)
+    print("fixed expression = " .. tostring(expression_str))
+
+
+    stack_operator = {"start"}
     expression_table_temp = FindAll(expression_str)
+    expression_table_temp = fixPlusMinus(expression_table_temp)
     -- expression_table_temp = FindOperator(expression_str, expression_table_temp)
     -- expression_table_temp = FindDigit(expression_str, expression_table_temp)
 
@@ -289,6 +319,7 @@ local function Caculate(expression_str)
     return table.remove(stack_number)
 end
 
+-- 输入
 Caculator.Input = function()
     local expression = ""
     while(true) do

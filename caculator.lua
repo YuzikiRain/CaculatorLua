@@ -40,9 +40,12 @@ local function isOperator(str)
     return false
 end
 
+local pi = 3.14159265358979323846
 -- 修复不规范的写法
-local fixTable = {["pi"] = "3.14159265358979323846", 
--- ["%^d%.?%d*"] = "0%1", 
+local fixTable = {
+["(%d.?)pi"] = "%1*" .. tostring(pi), ["(pi)%(pi"] = "%1*(" .. tostring(pi),
+["pi"] = tostring(pi),
+-- ["%^d%.?%d*"] = "0%1",
 ["Sin"] = "sin", ["Cos"] = "cos", ["Tan"] = "tan"}
 local function preFix(expression)
     for pattern,replace in pairs(fixTable) do
@@ -59,7 +62,7 @@ local function fixPlusMinus(expression_table)
         -- 一元操作符的 - +，则在前边补上0
         if word == "-" or word == "+" then
             local last = expression_table[index - 1]
-            if (last and not isNumber(last)) or index == 1 then
+            if (last and (last == "(")) or index == 1 then
                 table.insert(expression_table, index, 0)
             end
         -- sin/! 等一元操作符后如果是数字，补全()括号
@@ -76,9 +79,10 @@ end
 
 -- 添加省略的 * 星号
 local fillStarTable = {
-["(%d)sin"] = "%1*sin", ["(%d)cos"] = "%1*cos", ["(%d)tan"] = "%1*tan", 
-["(%))sin"] = "%1*sin", ["(%))cos"] = "%1*cos", ["(%)tan"] = "%1*tan", 
-["(%d%.?)pi"] = "%1*pi", ["(%d%.?)%("] = "%1*(", 
+["(%d)sin"] = "%1*sin", ["(%d)cos"] = "%1*cos", ["(%d)tan"] = "%1*tan",
+["(%))sin"] = "%1*sin", ["(%))cos"] = "%1*cos", ["(%)tan"] = "%1*tan",
+-- ["(%d%.?)pi"] = "(%1*pi)", ["%(pi"] = "*(pi", ["%)pi"] = ")*pi",
+["(%d%.?)%("] = "%1*(", ["%)(%d%.?)"] = ")*%1",
 }
 local function fillStar(expression)
     for pattern,replace in pairs(fillStarTable) do
@@ -138,25 +142,6 @@ local function FindAll(str)
                 operator = ""
             end
         end
-        -- local index = 1
-        -- while true do
-        --     local character = str:sub(index, index)
-        --     if index > #str then
-        --         if #operator > 0 then
-        --             table.insert(table_operators, operator)
-        --         end
-        --         break
-        --     elseif isOneOperator(character) then
-        --         if #operator > 0 then
-        --             table.insert(table_operators, operator)
-        --             operator = ""
-        --         end
-        --         table.insert(table_operators, character)
-        --     else
-        --         operator = operator .. character
-        --     end
-        --     index = index + 1
-        -- end
         return table_operators
     end
 
@@ -192,7 +177,7 @@ local function FindAll(str)
 
             break
         -- 操作符
-        else           
+        else
             operator = operator .. character
             if #number > 0 then
                 table.insert(expression_table, tonumber(number))
@@ -222,7 +207,7 @@ local function comparePriority(stack_top, index)
             current_priority = stack_top_priority + 1
         end
     end
-    
+
     -- 栈顶运算符优先级更高，则可以立即进行计算
     if stack_top_priority > current_priority then
         -- 是否是一元运算符
@@ -269,25 +254,15 @@ end
 local function Caculate(expression_str)
 
     -- 预处理
-    expression_str = fillStar(expression_str)
     expression_str = preFix(expression_str)
+    expression_str = fillStar(expression_str)
+
     print("fixed expression = " .. tostring(expression_str))
 
 
     stack_operator = {"start"}
     expression_table_temp = FindAll(expression_str)
     expression_table_temp = fixPlusMinus(expression_table_temp)
-    -- expression_table_temp = FindOperator(expression_str, expression_table_temp)
-    -- expression_table_temp = FindDigit(expression_str, expression_table_temp)
-
-    -- -- 处理变为装有操作符和操作数和table
-    -- expression_table_target = {}
-    -- for i = 1,#expression_str do
-    --     --print(expression_table_temp[i])
-    --     if expression_table_temp[i] then
-    --         table.insert(expression_table_target, expression_table_temp[i])
-    --     end
-    -- end
 
     expression_table_target = expression_table_temp
     table.insert(expression_table_target,"end")
@@ -325,12 +300,12 @@ Caculator.Input = function()
     while(true) do
         print("----------------------------------------- \n enter your expression (q/quit to exit)")
         expression = io.read("l")
-        
+
         if expression == "q" or expression == "quit" then
             print("user quit.")
             break
         end
-        
+
         if expression == "" then
             print("empty expression")
         else
